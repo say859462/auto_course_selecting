@@ -6,7 +6,9 @@
 import base64
 import io
 import logging
+import os
 import time
+import traceback
 ## 單元測試模組，線性測試用不到
 import unittest
 import warnings
@@ -55,6 +57,12 @@ options.add_argument("--log-level=0")
 options.add_argument('--disable-extensions')
 options.add_argument('test-type')
 
+FORMAT = '%(asctime)s %(filename)s %(levelname)s:%(message)s'
+logging.basicConfig(level=logging.DEBUG,
+                    format=FORMAT,
+                    filename='Log.log',
+                    filemode='a')
+
 
 #驗證碼破解物件
 class verifyCodeBreaker:
@@ -78,7 +86,11 @@ class verifyCodeBreaker:
         ocr = ddddocr.DdddOcr()
         with open('captcha_login.png', 'rb') as f:
             img_bytes = f.read()
+        #圖片識別驗證碼
         res = ocr.classification(img_bytes)
+        #刪掉圖片
+        os.remove("captcha_login.png")
+
         return res.upper()
 
 
@@ -116,8 +128,12 @@ class WebDriver:
                     EC.presence_of_element_located(
                         (By.CLASS_NAME, "form-label")))
                 break
-            except TimeoutError as err:
+            except TimeoutError:
                 print("載入頁面失敗，正在重新嘗試...")
+            except Exception as err:
+                logging.warning("載入網頁出現問題 => " + str(err))
+                print("網頁無回應，請等待網頁正常再開啟....")
+                return
 
         self.user = None
         self.driver.maximize_window()
@@ -173,7 +189,8 @@ class WebDriver:
                 By.XPATH, "//iframe[@id='menuIFrame']")
             self.driver.switch_to.frame(sidebar_frame)
         except TimeoutError:
-            pass
+            print("載入頁面失敗")
+            return
 
         #點擊教務系統
         try:
@@ -181,7 +198,8 @@ class WebDriver:
                 EC.presence_of_element_located((By.ID, "Menu_TreeViewt1")))
             self.driver.find_element(By.ID, "Menu_TreeViewt1").click()
         except TimeoutError:
-            pass
+            print("點擊教務系統按鈕無回應")
+            return
 
         #點擊選課系統
         try:
@@ -189,14 +207,17 @@ class WebDriver:
                 EC.presence_of_element_located((By.ID, "Menu_TreeViewt31")))
             self.driver.find_element(By.ID, "Menu_TreeViewt31").click()
         except TimeoutError:
-            pass
+            print("點擊選課系統按鈕無回應")
+            return
+
         #點擊線上即時加退選
         try:
             WebDriverWait(self.driver, 3).until(
                 EC.presence_of_element_located((By.ID, "Menu_TreeViewt41")))
             self.driver.find_element(By.ID, "Menu_TreeViewt41").click()
         except TimeoutError:
-            pass
+            print("點擊線上即時加退選按鈕無回應")
+            return
 
         self.driver.switch_to.default_content()
 
@@ -242,18 +263,17 @@ class WebDriver:
 
         #目標加選按鈕
         result_btn = None
+        #紀錄搜尋結果第幾列
+        result_idx = 0
         #找到目標欄位
         for row in search_result_table.find_elements(By.TAG_NAME, "tr")[1:]:
             cols = row.find_elements(By.TAG_NAME, "td")
+            result_idx += 1
             if (cols[2].text == course[0] and cols[3].text == course[1]):
                 result_btn = cols[0].find_element(By.TAG_NAME, "a")
                 break
 
-
-#selenium.common.exceptions.ElementClickInterceptedException
         comp = (course[0] + ' ' + course[1])
-        ignored_exceptions = ('NoSuchElementException',
-                              'StaleElementReferenceException')
 
         print("正在嘗試加選 " + comp + ".....")
         #不斷嘗試加入課程直到加選成功
@@ -261,28 +281,28 @@ class WebDriver:
                                             "Div2").text.__contains__(comp)):
             #按下加選按鈕
             try:
-                result_btn.click()
+                webdriver.ActionChains(self.driver).move_to_element(
+                    result_btn).click(result_btn).perform()
                 self.resolveAllAlerts(1.5, True)
             except StaleElementReferenceException:
                 #重新抓取最新的table
                 search_result_table = self.driver.find_element(
                     By.ID, "DataGrid1")
                 #目標加選按鈕
-                result_btn = None
-                #找到目標欄位
-                for row in search_result_table.find_elements(
-                        By.TAG_NAME, "tr")[1:]:
-                    cols = row.find_elements(By.TAG_NAME, "td")
-                    if (cols[2].text == course[0]
-                            and cols[3].text == course[1]):
-                        result_btn = cols[0].find_element(By.TAG_NAME, "a")
-                        break
-
-            #仍然沒有加入成功
-            # if not self.driver.find_element(By.ID,
-            #                                 "Div2").text.__contains__(comp):
+                result_btn = search_result_table.find_elements(
+                    By.TAG_NAME, "tr")[result_idx].find_elements(
+                        By.TAG_NAME, "td")[0].find_element(By.TAG_NAME, "a")
+            except TimeoutException:
+                print("網頁無回應，請等待網頁正常再執行......")
+                return
+            except UnexpectedAlertPresentException:
+                self.resolveAllAlerts(1.5, True)
+            except Exception as ex:
+                logging.warning('Exception Error: ' + str(ex))
+                return
 
         print(comp + " 加選成功!")
+        #B92B1G04 B
 
     #檢查是否有alert
     def isAlertPresent(self, timeout):
@@ -290,6 +310,7 @@ class WebDriver:
             #等待alert跳出
             alert = WebDriverWait(self.driver,
                                   timeout).until(EC.alert_is_present())
+
             if (not alert):
                 raise TimeoutException
             return True
@@ -308,6 +329,7 @@ class WebDriver:
         else:
             self.driver.switch_to.alert.dismiss()
 
+
 if __name__ == '__main__':
 
     print(
@@ -321,7 +343,6 @@ if __name__ == '__main__':
     print("*注意:請確認欲加選的課程不衝堂或出現其他無法加選的情況..............")
 
     print("請輸入欲加選的課號以及班別(ex:B57030TX A)，並輸入end退出")
-    cmd = ''
 
     targets = []
     while (True):
