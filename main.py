@@ -1,7 +1,6 @@
 '''
 海大自動搶課系統
 '''
-
 ## 延遲時間相關
 import base64
 import io
@@ -276,14 +275,18 @@ class WebDriver:
         comp = (course[0] + ' ' + course[1])
 
         print("正在嘗試加選 " + comp + ".....")
+
         #不斷嘗試加入課程直到加選成功
-        while (not self.driver.find_element(By.ID,
-                                            "Div2").text.__contains__(comp)):
+        while (True):
+
             #按下加選按鈕
             try:
                 webdriver.ActionChains(self.driver).move_to_element(
                     result_btn).click(result_btn).perform()
-                self.resolveAllAlerts(1.5, True)
+                self.resolveAllAlerts(2, True)
+                if (self.driver.find_element(By.ID,
+                                             "Div2").text.__contains__(comp)):
+                    break
             except StaleElementReferenceException:
                 #重新抓取最新的table
                 search_result_table = self.driver.find_element(
@@ -296,10 +299,7 @@ class WebDriver:
                 print("網頁無回應，請等待網頁正常再執行......")
                 return
             except UnexpectedAlertPresentException:
-                self.resolveAllAlerts(1.5, True)
-            except Exception as ex:
-                logging.warning('Exception Error: ' + str(ex))
-                return
+                self.resolveAllAlerts(2, True)
 
         print(comp + " 加選成功!")
         #B92B1G04 B
@@ -321,9 +321,11 @@ class WebDriver:
     def resolveAllAlerts(self, timeout, accept):
         while (self.isAlertPresent(timeout)):
             self.resolveAlert(accept)
+            time.sleep(1)
 
     #分別處理alert
     def resolveAlert(self, accept):
+
         if (accept):
             self.driver.switch_to.alert.accept()
         else:
@@ -331,7 +333,6 @@ class WebDriver:
 
 
 if __name__ == '__main__':
-
     print(
         "---------------------歡迎使用海大搶課系統，請登入您的海大教學務系統之帳號密碼---------------------"
     )
@@ -340,7 +341,7 @@ if __name__ == '__main__':
     #登入
     while (not crawler.Login()):
         pass
-    print("*注意:請確認欲加選的課程不衝堂或出現其他無法加選的情況..............")
+    print("*注意:請確認欲加選的課程不衝堂或出現其他無法加選的情況..............程式會報錯")
 
     print("請輸入欲加選的課號以及班別(ex:B57030TX A)，並輸入end退出")
 
@@ -349,6 +350,7 @@ if __name__ == '__main__':
         cmd = input()
         if cmd == "end":
             break
+
         targets.append(cmd)
     print("---------------------輸入完畢---------------------")
 
